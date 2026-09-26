@@ -1,4 +1,4 @@
-"""照明设施接口：维护照明设施，覆盖安排检修、确认正常、停用设施等动作。"""
+"""照明设施接口：维护照明设施，覆盖安排检修、确认正常、确认异常、停用设施等动作。"""
 from __future__ import annotations
 
 from typing import Any
@@ -13,13 +13,13 @@ router = APIRouter(prefix="/api/light", tags=["照明设施"])
 service = LightService()
 
 LIST_FIELDS = ["设施编号", "灯杆编号", "灯具类型", "所在道路", "亮灯率", "上次检修日", "责任班组", "设施状态"]
-STATUSES = ["待检修", "正常亮灯", "缺亮待修", "已停用"]
+STATUSES = ["待检修", "检修中", "正常亮灯", "缺亮待修", "已停用"]
 
 
 @router.get("", response_model=PageResult[dict])
 def list_entries(
     keyword: str | None = Query(default=None, description="按设施编号检索"),
-    status: str | None = Query(default=None, description="待检修、正常亮灯、缺亮待修、已停用"),
+    status: str | None = Query(default=None, description="待检修、检修中、正常亮灯、缺亮待修、已停用"),
     page: int = 1,
     size: int = 20,
 ) -> PageResult[dict]:
@@ -28,6 +28,12 @@ def list_entries(
         raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
     items, total = service.list_entries(keyword=keyword, status=status, page=page, size=size)
     return PageResult(items=items, total=total, page=page, size=size)
+
+
+@router.get("/stats")
+def stats() -> dict[str, Any]:
+    """列表页统计口径：在册件数、缺亮待修件数与平均亮灯率，和明细数据同源。"""
+    return service.stats()
 
 
 @router.get("/{entry_id}", response_model=dict)
@@ -50,9 +56,9 @@ def create_entry(payload: EntryPayload) -> ActionResult:
 
 @router.post("/{entry_id}/actions", response_model=ActionResult)
 def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
-    """对单条照明设施执行安排检修、确认正常、停用设施；不允许的动作会被拦下并说明原因。"""
+    """对单条照明设施执行安排检修、确认正常、确认异常、停用设施；不允许的动作会被拦下并说明原因。"""
     action = str(payload.values.get("action") or "").strip()
-    entry, message = service.run_action(entry_id, action)
+    entry, message = service.run_action(entry_id, action, payload.values)
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
